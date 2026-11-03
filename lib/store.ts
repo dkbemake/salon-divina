@@ -22,10 +22,25 @@ const BLOBS_READ_TIMEOUT_MS = 4000;
 
 type BlobStore = ReturnType<typeof getStore>;
 
+/**
+ * Sur Netlify, Blobs annule le corps des réponses d'erreur (dont le 404 « clé
+ * absente ») et cette annulation ne se termine jamais. Lire ce corps d'abord
+ * évite le blocage ; les réponses réussies restent transmises telles quelles.
+ */
+const fetchForBlobs: typeof fetch = async (input, init) => {
+  const response = await fetch(input, init);
+  if (response.status < 400) return response;
+  return new Response(await response.arrayBuffer(), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+};
+
 /** Renvoie le magasin Netlify Blobs, ou null hors de l'environnement Netlify. */
 function netlifyStore(name: string): BlobStore | null {
   try {
-    return getStore(name);
+    return getStore({ name, consistency: 'strong', fetch: fetchForBlobs });
   } catch (error) {
     if (error instanceof Error && error.name === 'MissingBlobsEnvironmentError') return null;
     throw error;
