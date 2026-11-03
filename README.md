@@ -4,7 +4,6 @@ _Beauté, Désir et Divinité._
 
 Site Next.js 16 (App Router) du salon de massage **Salon Divina**, prêt à déployer sur **Netlify** :
 
-- écran d'entrée animé avec vérification d'âge (18 ans et plus) et logo « V » en mains dessinées ;
 - pages Accueil, Services, Professionnelles, Réservation et Contact (style identique au site actuel) ;
 - formulaire de réservation relié à **Netlify Forms** ;
 - espace administrateur protégé pour modifier soins, profils, textes, coordonnées et photos, avec enregistrement permanent dans **Netlify Blobs**.
@@ -78,25 +77,14 @@ Le formulaire envoie les demandes à Netlify Forms (formulaire `reservation`, d�
 
 Un champ piège invisible (« honeypot ») filtre les robots.
 
-## 5. Vérification d'âge
-
-- Toute page demandée sans confirmation est redirigée vers `/verification-age` (fichier `proxy.ts`, exécuté côté serveur
-  avant l'affichage).
-- « J'ai 18 ans ou plus – Entrer » enregistre le choix dans **localStorage** et dans un cookie (1 an), puis ouvre la page
-  demandée. Le visiteur n'a plus à confirmer lors de ses visites suivantes.
-- « J'ai moins de 18 ans » mène à `/acces-refuse`, sans aucun lien vers le contenu.
-- Pour revoir l'écran d'entrée et son animation après avoir confirmé : ouvrez `/verification-age?revoir`
-  (la confirmation mémorisée dans ce navigateur est effacée).
-- Les animations respectent le réglage « réduire les animations » du système.
-
-## 6. Référencement
+## 5. Référencement
 
 - La balise `noindex` a été retirée : les pages publiques sont indexables (`robots: index, follow`).
 - `/robots.txt` et `/sitemap.xml` sont générés automatiquement ; `/admin`, `/connexion` et `/api` sont exclus de l'indexation.
 - À noter : comme toutes les pages passent d'abord par la vérification d'âge, les moteurs de recherche verront surtout l'écran
   d'entrée (titre, description et slogan du site).
 
-## 7. Développement local
+## 6. Développement local
 
 ```bash
 npm install
@@ -108,12 +96,10 @@ Hors de Netlify, le contenu et les photos sont enregistrés dans le dossier `.da
 Avec la [CLI Netlify](https://docs.netlify.com/cli/get-started/) (`netlify dev`), Netlify Blobs est utilisé comme en production.
 Le formulaire de réservation ne fonctionne qu'une fois déployé sur Netlify.
 
-## 8. Structure du projet
+## 7. Structure du projet
 
 ```
 app/
-  (gate)/verification-age     écran d'entrée et vérification d'âge
-  (gate)/acces-refuse         page « moins de 18 ans »
   (site)/                     pages publiques (accueil, services, professionnelles, réservation, contact)
   (site)/connexion, admin     connexion et espace administrateur
   api/auth/login, logout      ouverture / fermeture de session
@@ -122,15 +108,11 @@ app/
   api/images/[key]            diffusion des photos téléversées
   globals.css                 styles (couleurs et polices du site actuel)
 components/
-  DivinaV.tsx                 logo « V » en mains (SVG animé)
-  AgeGate.tsx, Sparkles.tsx   animation de l'écran d'entrée
   admin/                      éditeur, champ photo, formulaire de connexion
 lib/
   content.ts                  modèle de contenu, valeurs par défaut, validation
   store.ts                    stockage (Netlify Blobs, ou .data/ en local)
   auth.ts                     vérification du mot de passe et sessions
-  age.ts                      constantes de la vérification d'âge
-proxy.ts                      redirection vers la vérification d'âge
 public/img/                   photos d'origine du site
 public/__forms.html           déclaration du formulaire pour Netlify Forms
 ```

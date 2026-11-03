@@ -8,6 +8,13 @@ const nextConfig: NextConfig = {
     localPatterns: [{ pathname: '/img/**', search: '' }],
     formats: ['image/avif', 'image/webp'],
   },
+  // Anciennes adresses de la vérification d'âge (favoris, pages déjà indexées).
+  async redirects() {
+    return [
+      { source: '/verification-age', destination: '/', permanent: true },
+      { source: '/acces-refuse', destination: '/', permanent: true },
+    ];
+  },
   async headers() {
     return [
       {
