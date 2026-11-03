@@ -8,8 +8,6 @@ export const dynamic = 'force-dynamic';
 
 const WAIT_MS = 6000;
 
-type PatchedFetch = typeof fetch & { _nextOriginalFetch?: typeof fetch };
-
 async function timed(label: string, run: () => Promise<unknown>) {
   const started = Date.now();
   const outcome = await Promise.race([
@@ -22,23 +20,31 @@ async function timed(label: string, run: () => Promise<unknown>) {
   return { label, outcome, ms: Date.now() - started };
 }
 
-export async function GET() {
-  const current = globalThis.fetch as PatchedFetch;
-  const original = current._nextOriginalFetch;
-  const noStore = ((input: Parameters<typeof fetch>[0], init?: RequestInit) =>
-    current(input, { ...init, cache: 'no-store' })) as typeof fetch;
-  const absent = 'cle-inexistante';
+/** Lit entièrement le corps des réponses d'erreur avant de les rendre à Blobs. */
+const buffered = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+  const res = await fetch(input, init);
+  if (res.status < 400) return res;
+  return new Response(await res.arrayBuffer(), { status: res.status, statusText: res.statusText, headers: res.headers });
+}) as typeof fetch;
 
+/** Annule directement le corps, comme le fait Blobs, et mesure si cela se termine. */
+const cancelling = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+  const res = await fetch(input, init);
+  await res.body?.cancel();
+  return new Response(null, { status: res.status === 200 ? 204 : res.status, headers: res.headers });
+}) as typeof fetch;
+
+export async function GET() {
+  const absent = 'cle-inexistante';
   const results = await Promise.all([
-    timed('A. fetch par défaut, clé absente', () => getStore('divina-content').get(absent, { type: 'json' })),
-    timed('B. fetch d’origine, clé absente', () =>
-      original ? getStore({ name: 'divina-content', fetch: original }).get(absent, { type: 'json' }) : Promise.reject(new Error('indisponible')),
-    ),
-    timed('C. fetch no-store, clé absente', () => getStore({ name: 'divina-content', fetch: noStore }).get(absent, { type: 'json' })),
-    timed('D. photo, fetch par défaut, clé absente', () => getStore('divina-images').getWithMetadata(absent, { type: 'arrayBuffer' })),
-    timed('E. photo, fetch d’origine, clé absente', () =>
-      original ? getStore({ name: 'divina-images', fetch: original }).getWithMetadata(absent, { type: 'arrayBuffer' }) : Promise.reject(new Error('indisponible')),
-    ),
+    timed('F. corps lu d’abord, contenu, clé absente', () => getStore({ name: 'divina-content', fetch: buffered }).get(absent, { type: 'json' })),
+    timed('G. corps lu d’abord, photo, clé absente', () => getStore({ name: 'divina-images', fetch: buffered }).getWithMetadata(absent, { type: 'arrayBuffer' })),
+    timed('H. corps lu d’abord, clé « site »', () => getStore({ name: 'divina-content', fetch: buffered }).get('site', { type: 'json' })),
+    timed('I. fetch par défaut, clé « site »', () => getStore('divina-content').get('site', { type: 'json' })),
+    timed('J. annulation seule, sans Blobs autour', async () => {
+      const store = getStore({ name: 'divina-content', fetch: cancelling });
+      return store.get(absent, { type: 'text' });
+    }),
   ]);
-  return Response.json({ hasOriginalFetch: Boolean(original), results }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ results }, { headers: { 'Cache-Control': 'no-store' } });
 }
