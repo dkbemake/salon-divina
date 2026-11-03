@@ -17,16 +17,31 @@ const CONTENT_STORE = 'divina-content';
 const IMAGE_STORE = 'divina-images';
 const CONTENT_KEY = 'site';
 const LOCAL_DIR = path.join(process.cwd(), '.data');
+/** Attente maximale d'une lecture Netlify Blobs, pour ne jamais bloquer une page. */
+const BLOBS_READ_TIMEOUT_MS = 4000;
 
 type BlobStore = ReturnType<typeof getStore>;
 
 /** Renvoie le magasin Netlify Blobs, ou null hors de l'environnement Netlify. */
 function netlifyStore(name: string): BlobStore | null {
   try {
-    return getStore({ name, consistency: 'strong' });
+    return getStore(name);
   } catch (error) {
     if (error instanceof Error && error.name === 'MissingBlobsEnvironmentError') return null;
     throw error;
+  }
+}
+
+/** Rejette la promesse si Netlify Blobs ne répond pas à temps. */
+async function withBlobsTimeout<T>(read: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Netlify Blobs : aucune réponse après ${BLOBS_READ_TIMEOUT_MS} ms`)), BLOBS_READ_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([read, timeout]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -36,7 +51,7 @@ export async function getContent(): Promise<SiteContent> {
   const store = netlifyStore(CONTENT_STORE);
   try {
     if (store) {
-      const data = await store.get(CONTENT_KEY, { type: 'json' });
+      const data = await withBlobsTimeout(store.get(CONTENT_KEY, { type: 'json' }));
       return data ? normalizeContent(data) : DEFAULT_CONTENT;
     }
     const raw = await fs.readFile(path.join(LOCAL_DIR, 'content.json'), 'utf8');
@@ -74,7 +89,13 @@ export async function saveImage(key: string, data: ArrayBuffer, contentType: str
 export async function readImage(key: string): Promise<{ data: ArrayBuffer; contentType: string } | null> {
   const store = netlifyStore(IMAGE_STORE);
   if (store) {
-    const result = await store.getWithMetadata(key, { type: 'arrayBuffer' });
+    let result;
+    try {
+      result = await withBlobsTimeout(store.getWithMetadata(key, { type: 'arrayBuffer' }));
+    } catch (error) {
+      console.error('Lecture de la photo impossible', error);
+      return null;
+    }
     if (!result) return null;
     const contentType = typeof result.metadata.contentType === 'string' ? result.metadata.contentType : 'image/webp';
     return { data: result.data, contentType };
