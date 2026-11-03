@@ -86,7 +86,7 @@ export type SiteContent = {
 
 export const DEFAULT_CONTENT: SiteContent = {
   home: {
-    heroEyebrow: 'Salon Divina · Montréal, QC',
+    heroEyebrow: 'Salon Divina Massage · Rouyn-Noranda, QC',
     heroTitle: 'Beauté, *Désir* et Divinité.',
     heroText:
       'Découvrez une expérience de massage personnalisée dans une ambiance élégante, chaleureuse et apaisante.',

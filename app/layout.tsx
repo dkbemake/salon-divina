@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: 'Salon Divina | Beauté, Désir et Divinité',
   description:
-    'Salon Divina, salon de massage à Montréal : massage relaxant, massage suédois et massage aux huiles dans une ambiance élégante et dorée.',
+    'Salon Divina, salon de massage à Rouyn-Noranda : massage relaxant, massage suédois et massage aux huiles dans une ambiance élégante et dorée.',
   // Site prêt pour le lancement : indexation autorisée (plus de balise noindex).
   robots: { index: true, follow: true },
   openGraph: {
