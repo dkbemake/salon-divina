@@ -1,103 +1,44 @@
 /**
  * TEMPORAIRE — diagnostic de Netlify Blobs, à retirer une fois le problème trouvé.
- * Ne renvoie que des codes HTTP, des durées et des noms de champs : aucun jeton,
- * aucune URL signée ni valeur de configuration.
+ * Ne renvoie que des résultats et des durées : aucun jeton ni valeur de configuration.
  */
 import { getStore } from '@netlify/blobs';
 
 export const dynamic = 'force-dynamic';
 
-const WAIT_MS = 12000;
+const WAIT_MS = 6000;
 
-type PatchedFetch = typeof fetch & { __nextPatched?: boolean; _nextOriginalFetch?: typeof fetch };
+type PatchedFetch = typeof fetch & { _nextOriginalFetch?: typeof fetch };
 
-function hostOf(input: unknown): string {
-  try {
-    return new URL(String(input)).host;
-  } catch {
-    return 'invalide';
-  }
-}
-
-async function probe(label: string, baseFetch: typeof fetch) {
-  const attempts: Record<string, unknown>[] = [];
-  const spy = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-    const started = Date.now();
-    const host = hostOf(input);
-    try {
-      const res = await baseFetch(input, init);
-      attempts.push({
-        host,
-        status: res.status,
-        ms: Date.now() - started,
-        rateLimitReset: res.headers.get('x-ratelimit-reset'),
-        retryAfter: res.headers.get('retry-after'),
-        // Le corps des erreurs seulement : un 200 contient le contenu du site.
-        body: res.ok ? undefined : (await res.clone().text()).slice(0, 300),
-      });
-      return res;
-    } catch (error) {
-      const err = error as Error & { cause?: { code?: string; message?: string } };
-      attempts.push({
-        host,
-        ms: Date.now() - started,
-        error: err.name,
-        message: err.message?.slice(0, 200),
-        cause: err.cause?.code ?? err.cause?.message?.slice(0, 200),
-      });
-      throw error;
-    }
-  }) as typeof fetch;
-
+async function timed(label: string, run: () => Promise<unknown>) {
   const started = Date.now();
   const outcome = await Promise.race([
-    (async () => {
-      try {
-        const store = getStore({ name: 'divina-content', fetch: spy });
-        const data = await store.get('site', { type: 'text' });
-        return data === null ? 'réussi : aucune donnée enregistrée' : 'réussi : données présentes';
-      } catch (error) {
-        return `erreur : ${(error as Error).name} ${(error as Error).message?.slice(0, 300)}`;
-      }
-    })(),
-    new Promise<string>((resolve) => setTimeout(() => resolve(`pas de résultat après ${WAIT_MS} ms`), WAIT_MS)),
+    run().then(
+      (value) => (value === null ? 'réussi : null' : 'réussi : données'),
+      (error: Error) => `erreur : ${error.name} ${error.message?.slice(0, 200)}`,
+    ),
+    new Promise<string>((resolve) => setTimeout(() => resolve('BLOQUÉ'), WAIT_MS)),
   ]);
-  return { label, outcome, ms: Date.now() - started, attempts };
-}
-
-function contextShape() {
-  const fromGlobal = (globalThis as { netlifyBlobsContext?: string }).netlifyBlobsContext;
-  const raw = fromGlobal ?? process.env.NETLIFY_BLOBS_CONTEXT;
-  if (!raw) return { source: 'absent' };
-  try {
-    const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8')) as Record<string, unknown>;
-    return {
-      source: fromGlobal ? 'globalThis' : 'env',
-      fields: Object.keys(parsed),
-      edgeHost: parsed.edgeURL ? hostOf(parsed.edgeURL) : null,
-      uncachedEdgeHost: parsed.uncachedEdgeURL ? hostOf(parsed.uncachedEdgeURL) : null,
-      apiHost: parsed.apiURL ? hostOf(parsed.apiURL) : null,
-      primaryRegion: parsed.primaryRegion ?? null,
-    };
-  } catch {
-    return { source: fromGlobal ? 'globalThis' : 'env', fields: 'illisible' };
-  }
+  return { label, outcome, ms: Date.now() - started };
 }
 
 export async function GET() {
   const current = globalThis.fetch as PatchedFetch;
-  const probes = [probe('fetch actuel', current)];
-  if (current._nextOriginalFetch) probes.push(probe('fetch d’origine', current._nextOriginalFetch));
+  const original = current._nextOriginalFetch;
+  const noStore = ((input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+    current(input, { ...init, cache: 'no-store' })) as typeof fetch;
+  const absent = 'cle-inexistante';
 
-  const results = await Promise.all(probes);
-  return Response.json(
-    {
-      node: process.version,
-      nextPatchedFetch: Boolean(current.__nextPatched),
-      hasOriginalFetch: Boolean(current._nextOriginalFetch),
-      context: contextShape(),
-      results,
-    },
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
+  const results = await Promise.all([
+    timed('A. fetch par défaut, clé absente', () => getStore('divina-content').get(absent, { type: 'json' })),
+    timed('B. fetch d’origine, clé absente', () =>
+      original ? getStore({ name: 'divina-content', fetch: original }).get(absent, { type: 'json' }) : Promise.reject(new Error('indisponible')),
+    ),
+    timed('C. fetch no-store, clé absente', () => getStore({ name: 'divina-content', fetch: noStore }).get(absent, { type: 'json' })),
+    timed('D. photo, fetch par défaut, clé absente', () => getStore('divina-images').getWithMetadata(absent, { type: 'arrayBuffer' })),
+    timed('E. photo, fetch d’origine, clé absente', () =>
+      original ? getStore({ name: 'divina-images', fetch: original }).getWithMetadata(absent, { type: 'arrayBuffer' }) : Promise.reject(new Error('indisponible')),
+    ),
+  ]);
+  return Response.json({ hasOriginalFetch: Boolean(original), results }, { headers: { 'Cache-Control': 'no-store' } });
 }
