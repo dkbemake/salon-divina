@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+    <title>Formulaires Netlify</title>
+  </head>
+  <body>
+    <!--
+      Déclaration du formulaire pour Netlify Forms (détecté au déploiement).
+      Le vrai formulaire est affiché par components/ReservationForm.tsx, qui
+      envoie ses données ici. Les noms de champs doivent rester identiques.
+    -->
+    <form name="reservation" data-netlify="true" netlify-honeypot="bot-field" hidden>
+      <input type="hidden" name="form-name" value="reservation" />
+      <input name="bot-field" />
+      <input name="nom" />
+      <input name="telephone" />
+      <input name="courriel" />
+      <input name="soin" />
+      <input name="professionnelle" />
+      <input name="date" />
+      <input name="heure" />
+      <textarea name="message"></textarea>
+    </form>
+  </body>
+</html>

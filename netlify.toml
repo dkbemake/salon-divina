@@ -1,0 +1,13 @@
+# Configuration Netlify pour Salon Divina.
+# Le plugin officiel @netlify/plugin-nextjs (OpenNext) transforme les routes
+# API et le proxy Next.js en Netlify Functions / Edge Functions.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

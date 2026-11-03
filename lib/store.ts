@@ -1,0 +1,100 @@
+/**
+ * Stockage permanent du contenu et des photos.
+ *
+ * - Sur Netlify : Netlify Blobs (aucune base de données à configurer).
+ *     · magasin « divina-content » → clé « site » : le JSON du contenu
+ *     · magasin « divina-images »  → une entrée par photo téléversée
+ * - En local avec `next dev` (pas d'environnement Netlify) : repli automatique
+ *   sur le dossier `.data/` à la racine du projet.
+ */
+import 'server-only';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { getStore } from '@netlify/blobs';
+import { DEFAULT_CONTENT, normalizeContent, type SiteContent } from './content';
+
+const CONTENT_STORE = 'divina-content';
+const IMAGE_STORE = 'divina-images';
+const CONTENT_KEY = 'site';
+const LOCAL_DIR = path.join(process.cwd(), '.data');
+
+type BlobStore = ReturnType<typeof getStore>;
+
+/** Renvoie le magasin Netlify Blobs, ou null hors de l'environnement Netlify. */
+function netlifyStore(name: string): BlobStore | null {
+  try {
+    return getStore({ name, consistency: 'strong' });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'MissingBlobsEnvironmentError') return null;
+    throw error;
+  }
+}
+
+/* ------------------------------- Contenu -------------------------------- */
+
+export async function getContent(): Promise<SiteContent> {
+  const store = netlifyStore(CONTENT_STORE);
+  try {
+    if (store) {
+      const data = await store.get(CONTENT_KEY, { type: 'json' });
+      return data ? normalizeContent(data) : DEFAULT_CONTENT;
+    }
+    const raw = await fs.readFile(path.join(LOCAL_DIR, 'content.json'), 'utf8');
+    return normalizeContent(JSON.parse(raw));
+  } catch (error) {
+    // Fichier local absent au premier lancement : on utilise le contenu par défaut.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Lecture du contenu impossible', error);
+    return DEFAULT_CONTENT;
+  }
+}
+
+export async function saveContent(content: SiteContent): Promise<void> {
+  const store = netlifyStore(CONTENT_STORE);
+  if (store) {
+    await store.setJSON(CONTENT_KEY, content);
+    return;
+  }
+  await fs.mkdir(LOCAL_DIR, { recursive: true });
+  await fs.writeFile(path.join(LOCAL_DIR, 'content.json'), JSON.stringify(content, null, 2), 'utf8');
+}
+
+/* -------------------------------- Photos -------------------------------- */
+
+export async function saveImage(key: string, data: ArrayBuffer, contentType: string): Promise<void> {
+  const store = netlifyStore(IMAGE_STORE);
+  if (store) {
+    await store.set(key, data, { metadata: { contentType } });
+    return;
+  }
+  const dir = path.join(LOCAL_DIR, 'uploads');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, key), Buffer.from(data));
+}
+
+export async function readImage(key: string): Promise<{ data: ArrayBuffer; contentType: string } | null> {
+  const store = netlifyStore(IMAGE_STORE);
+  if (store) {
+    const result = await store.getWithMetadata(key, { type: 'arrayBuffer' });
+    if (!result) return null;
+    const contentType = typeof result.metadata.contentType === 'string' ? result.metadata.contentType : 'image/webp';
+    return { data: result.data, contentType };
+  }
+  try {
+    const file = await fs.readFile(path.join(LOCAL_DIR, 'uploads', key));
+    const ext = path.extname(key).slice(1);
+    return {
+      data: file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer,
+      contentType: IMAGE_TYPES[ext] ?? 'application/octet-stream',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Formats acceptés au téléversement (extension → type MIME). */
+export const IMAGE_TYPES: Record<string, string> = {
+  webp: 'image/webp',
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  avif: 'image/avif',
+};
